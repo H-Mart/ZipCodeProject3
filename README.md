@@ -1,4 +1,4 @@
-# ZipCodeProject2
+# ZipCodeProject3
 
 Note that lirf refers to the data file type we've designed for this project. It stands for Length Indicated Record File/Format. 
 
