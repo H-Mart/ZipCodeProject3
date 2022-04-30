@@ -19,7 +19,7 @@ class PrimaryKey {
 	};
     struct KeyStruct {
         std::string key;
-        unsigned int offset;
+        int RBN;
     };
     /**
      * @brief Generates an index file from the internal index
@@ -71,3 +71,16 @@ class PrimaryKey {
     bool isSorted = false;
     IndexFileHeader header;
 };
+
+
+bool CompareKeys(PrimaryKey::KeyStruct& s1, PrimaryKey::KeyStruct& s2);
+
+/**
+ * @brief Compare strings as number
+ * 
+ * @param s1 a numerical string
+ * @param s2 a numerical string
+ * @return true s1 < s2
+ * @return false s1 >= s2
+ */
+bool CompareStr(const std::string s1, const std::string& s2);

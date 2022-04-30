@@ -1,4 +1,5 @@
 #include "Place.h"
+#include "PrimaryKey.h"
 
 #include <fstream>
 #include <iomanip>
@@ -78,7 +79,42 @@ void Place::unpack(CsvBuffer& buffer) {
     std::stringstream(long_str) >> std::setprecision(10) >> longitude;  // convert to float
 }
 
-void Place::unpack(LengthIndicatedBuffer& buffer) {
+void Place::unpack(LengthIndicatedBuffer<LIHeader>& buffer) {
+    std::string skip;
+    string lat_str, long_str;
+
+    bool hasMore = true;
+    while (hasMore) {
+        auto curField = buffer.getCurFieldHeader();
+        switch (HeaderField(curField.fieldType)) {
+            case HeaderField::ZipCode:
+                hasMore = buffer.unpack(zipcode);
+                break;
+            case HeaderField::PlaceName:
+                hasMore = buffer.unpack(name);
+                break;
+            case HeaderField::State:
+                hasMore = buffer.unpack(state);
+                break;
+            case HeaderField::County:
+                hasMore = buffer.unpack(county);
+                break;
+            case HeaderField::Latitude:
+                hasMore = buffer.unpack(lat_str);
+                break;
+            case HeaderField::Longitude:
+                hasMore = buffer.unpack(long_str);
+                break;
+            default:
+                hasMore = buffer.unpack(skip);
+                break;
+        }
+    }
+
+    std::stringstream(lat_str) >> std::setprecision(10) >> latitude;    // convert to float
+    std::stringstream(long_str) >> std::setprecision(10) >> longitude;  // convert to float
+}
+void Place::unpack(LengthIndicatedBuffer<BlockFileHeader>& buffer) {
     std::string skip;
     string lat_str, long_str;
 
@@ -114,7 +150,40 @@ void Place::unpack(LengthIndicatedBuffer& buffer) {
     std::stringstream(long_str) >> std::setprecision(10) >> longitude;  // convert to float
 }
 
-void Place::pack(LengthIndicatedBuffer& buffer) {
+void Place::pack(LengthIndicatedBuffer<LIHeader>& buffer) {
+    buffer.clear();
+    std::stringstream lat_strStream;
+    std::stringstream long_strStream;
+
+    lat_strStream << std::setprecision(10) << latitude;
+    long_strStream << std::setprecision(10) << longitude;
+
+    for (auto f : buffer.header.fields) {
+        switch (HeaderField(f.fieldType)) {
+            case HeaderField::ZipCode:
+                buffer.pack(zipcode);
+                break;
+            case HeaderField::PlaceName:
+                buffer.pack(name);
+                break;
+            case HeaderField::State:
+                buffer.pack(state);
+                break;
+            case HeaderField::County:
+                buffer.pack(county);
+                break;
+            case HeaderField::Latitude:
+                buffer.pack(lat_strStream.str());
+                break;
+            case HeaderField::Longitude:
+                buffer.pack(long_strStream.str());
+                break;
+            default:
+                break;
+        }
+    }
+}
+void Place::pack(LengthIndicatedBuffer<BlockFileHeader>& buffer) {
     buffer.clear();
     std::stringstream lat_strStream;
     std::stringstream long_strStream;
@@ -162,4 +231,8 @@ size_t Place::getSize() {
     size += sizeof(latitude);
     size += sizeof(longitude);
     return size;
+}
+
+bool Place::operator<(const Place& loc) {
+    return CompareStr(zipcode, loc.getZipCode());
 }

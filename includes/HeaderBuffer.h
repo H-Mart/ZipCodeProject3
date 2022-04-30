@@ -6,6 +6,7 @@
 
 #include "Header.h"
 
+template <typename HeaderType>
 class HeaderBuffer {
    private:
     std::vector<unsigned char> buffer;
@@ -31,7 +32,13 @@ class HeaderBuffer {
      *
      * @return a Header object loaded with the information in the file
      */
-    Header unpack();
+    HeaderType unpack();
+
+    void unpack(HeaderType& header);
+
+    void pack(HeaderType header);
+
+    void write(std::ostream& file);
 };
 
 #endif  // HEADER_BUFFER_H

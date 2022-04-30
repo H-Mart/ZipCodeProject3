@@ -9,11 +9,13 @@
 #include "Header.h"
 #include "enums.h"
 
+template<typename HeaderType>
 class LengthIndicatedBuffer {
-   private:
+   public:
     const char delim;
     int recordLength;
     bool initialized = false;
+    char magicNumber[4]; 
 
 
     char buffer[1000];
@@ -28,7 +30,7 @@ class LengthIndicatedBuffer {
 
 
    public:
-    Header header;
+    HeaderType header;
 
 
     /**
@@ -37,7 +39,7 @@ class LengthIndicatedBuffer {
      * @param delim The delimiter used between the record fields
      *
      */
-    LengthIndicatedBuffer(const char delim = ',');
+    LengthIndicatedBuffer(const char magicNumber[4], const char delim = ',');
 
     /**
      * @brief Read a single length indicated record into the buffer
@@ -69,6 +71,18 @@ class LengthIndicatedBuffer {
      * @retval false when instream.good() is false (indicating that we are probably at the end of the file)
      */
     bool read(std::istream& instream, int indexOffset);
+
+    /**
+     * @brief read a single length indicated record into the buffer from a vector
+     * 
+     * @param iBuffer the vector to be read from
+     * @param offset the position of the start of the record in the vector
+     * @return true 
+     * @return false 
+     */
+    bool read(std::vector<char> &iBuffer, int offset);
+
+    void write(std::vector<char> &iBuffer, int offset);
 
     /**
      * @brief Reads a field and puts it into a string
@@ -178,6 +192,10 @@ class LengthIndicatedBuffer {
      * @return FieldInfo
      */
     FieldInfo getCurFieldHeader();
+
 };
+
+template class LengthIndicatedBuffer<BlockFileHeader>;
+template class LengthIndicatedBuffer<LIHeader>;
 
 #endif  // CSVBUFFER_H

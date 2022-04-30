@@ -9,21 +9,27 @@
 
 #include "HeaderBuffer.h"
 
-const char MAGIC_HEADER_NUMBER[4] = {'Z', 'C', '0', '2'};
+struct LIHeader;
+struct BlockFileHeader;
 
-LengthIndicatedBuffer::LengthIndicatedBuffer(const char delim) : delim(delim) {
+template <typename HeaderType>
+LengthIndicatedBuffer<HeaderType>::LengthIndicatedBuffer(const char magicNumber[4], const char delim) : delim(delim) {
     clear();
+    memcpy(this->magicNumber, magicNumber, sizeof(this->magicNumber));
 
     // shouldn't be necessary since the program should not read any part of the buffer that has not been written to
     // but valgrind complained, so here we are
-    memset(buffer, 0, sizeof(buffer));  
+    memset(buffer, 0, sizeof(buffer));
 }
 
-std::string LengthIndicatedBuffer::getIndexFileName() {
+template <typename HeaderType>
+std::string LengthIndicatedBuffer<HeaderType>::getIndexFileName() {
     return header.fileInfo.indexFileName;
 }
 
-bool LengthIndicatedBuffer::checkFileType(std::istream& instream) {
+template <typename HeaderType>
+bool LengthIndicatedBuffer<HeaderType>::checkFileType(std::istream& instream) {
+    instream.clear();
     instream.seekg(0);
     char first4[4];
 
@@ -31,19 +37,21 @@ bool LengthIndicatedBuffer::checkFileType(std::istream& instream) {
 
     bool good = true;
     for (int i = 0; i < 4; i++) {
-        good = (first4[i] == MAGIC_HEADER_NUMBER[i]);
+        good = (first4[i] == magicNumber[i]);
     }
     return good;
 }
 
-bool LengthIndicatedBuffer::init(std::istream& instream) {
+template <typename HeaderType>
+bool LengthIndicatedBuffer<HeaderType>::init(std::istream& instream) {
     if (checkFileType(instream)) {
         // if file has magic number
         instream.seekg(0);
-        HeaderBuffer hBuf;
+        HeaderBuffer<HeaderType> hBuf;
         hBuf.read(instream);
         header = hBuf.unpack();
         initialized = true;
+        instream.clear();
 
     } else {
         // if file does not have magic number
@@ -53,12 +61,48 @@ bool LengthIndicatedBuffer::init(std::istream& instream) {
     return initialized;
 }
 
-bool LengthIndicatedBuffer::read(std::istream& instream, int indexOffset) {
+template <typename HeaderType>
+bool LengthIndicatedBuffer<HeaderType>::read(std::vector<char>& iBuffer, int offset) {
+    clear();
+    auto lengthIndicatorLength = header.fileInfo.lengthIndicatorSize;
+
+    int recordLength = 0;
+
+    // get actual record length
+    switch (LengthIndicatorType(header.fileInfo.lengthIndicatorFormat)) {
+        case LengthIndicatorType::BINARY:
+            memcpy(&lengthIndicatorLength, iBuffer.data() + offset, lengthIndicatorLength);
+            break;
+        case LengthIndicatorType::ASCII: {
+            std::string recordLengthStr;
+            char c;
+            for (int i = 0; i < lengthIndicatorLength; i++) {
+                c = iBuffer[offset + i];
+                recordLengthStr.push_back(c);
+            }
+            recordLength = std::stoi(recordLengthStr);
+
+            break;
+        }
+        case LengthIndicatorType::BCD:
+            break;
+    }
+
+    // read record
+    memcpy(buffer, iBuffer.data() + offset + lengthIndicatorLength, recordLength);
+    this->recordLength = recordLength;
+    return true;
+}
+
+template <typename HeaderType>
+bool LengthIndicatedBuffer<HeaderType>::read(std::istream& instream, int indexOffset) {
+    instream.clear();
     instream.seekg(indexOffset);
     return read(instream);
 }
 
-bool LengthIndicatedBuffer::read(std::istream& instream) {
+template <typename HeaderType>
+bool LengthIndicatedBuffer<HeaderType>::read(std::istream& instream) {
     clear();
 
     // get length of record length indicator
@@ -103,12 +147,14 @@ bool LengthIndicatedBuffer::read(std::istream& instream) {
     return instream.good();
 }
 
-void LengthIndicatedBuffer::writeHeader(std::ostream& outstream) {
+template <typename HeaderType>
+void LengthIndicatedBuffer<HeaderType>::writeHeader(std::ostream& outstream) {
     outstream.seekp(0);
     outstream << header;
 }
 
-bool LengthIndicatedBuffer::unpack(std::string& str) {
+template <typename HeaderType>
+bool LengthIndicatedBuffer<HeaderType>::unpack(std::string& str) {
     auto state = CSVState::UnquotedField;  // assume field is not quoted by default
 
     bool fieldHasMore = true;
@@ -154,11 +200,13 @@ bool LengthIndicatedBuffer::unpack(std::string& str) {
     return recordHasMore;
 }
 
-void LengthIndicatedBuffer::clear() {
-    curr = 0;
+template <typename HeaderType>
+void LengthIndicatedBuffer<HeaderType>::clear() {
+    recordLength = curr = 0;
 }
 
-void LengthIndicatedBuffer::pack(const std::string str) {
+template <typename HeaderType>
+void LengthIndicatedBuffer<HeaderType>::pack(const std::string str) {
     // put delimiters in between each field skipping the first
     if (curr > 0) {
         buffer[curr++] = delim;
@@ -171,9 +219,31 @@ void LengthIndicatedBuffer::pack(const std::string str) {
 
     // move curr pointer to the end of the field we just added
     curr += str.size();
+    recordLength = curr;
 }
 
-void LengthIndicatedBuffer::write(std::ostream& outstream) {
+template <typename HeaderType>
+void LengthIndicatedBuffer<HeaderType>::write(std::vector<char>& iBuffer, int offset) {
+    int lengthChars = 0;
+    switch (LengthIndicatorType(header.fileInfo.lengthIndicatorFormat)) {
+        case LengthIndicatorType::ASCII: {
+            std::ostringstream lengthStream;
+            lengthStream << std::setfill('0') << std::setw(header.fileInfo.lengthIndicatorSize) << (curr);
+            auto lengthStr = lengthStream.str();
+            memcpy(iBuffer.data() + offset, lengthStr.c_str(), lengthStream.str().size());
+
+            lengthChars = lengthStream.str().size();
+            break;
+        }
+        case LengthIndicatorType::BCD:
+        case LengthIndicatorType::BINARY:
+            break;
+    }
+    memcpy(iBuffer.data() + offset + lengthChars, buffer, curr);
+}
+
+template <typename HeaderType>
+void LengthIndicatedBuffer<HeaderType>::write(std::ostream& outstream) {
     switch (LengthIndicatorType(header.fileInfo.lengthIndicatorFormat)) {
         case LengthIndicatorType::ASCII: {
             std::ostringstream lengthStream;
@@ -190,6 +260,7 @@ void LengthIndicatedBuffer::write(std::ostream& outstream) {
     outstream.write(buffer, curr);
 }
 
-FieldInfo LengthIndicatedBuffer::getCurFieldHeader() {
+template <typename HeaderType>
+FieldInfo LengthIndicatedBuffer<HeaderType>::getCurFieldHeader() {
     return header.fields[fieldNum];
 }
